@@ -1,6 +1,7 @@
 import numpy as np
 from scipy import linalg
 from tqdm import tqdm
+from pathlib import Path
 
 import torch
 from torch.nn.functional import interpolate
@@ -55,7 +56,7 @@ def get_activations(data, model, batch_size=10):
     return np.vstack(activations)
 
 
-def frechet_video_distance(first_set_of_videos, second_set_of_videos, path_to_model_weights):
+def frechet_video_distance(first_set_of_videos: torch.Tensor, second_set_of_videos: torch.Tensor, path_to_model_weights: Path) -> float:
     i3d = InceptionI3d(400, in_channels=3)
     i3d.load_state_dict(torch.load(path_to_model_weights))
     i3d.train(False)
