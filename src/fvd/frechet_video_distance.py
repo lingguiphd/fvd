@@ -66,3 +66,36 @@ def frechet_video_distance(first_set_of_videos: torch.Tensor, second_set_of_vide
     print("Calculating activations for the second set of videos...")
     second_activations = get_activations(preprocess(second_set_of_videos, (224, 224)), i3d)
     return calculate_fvd_from_activations(first_activations, second_activations)
+
+
+class FrechetVideoDistance:
+    """ FVD 指标计算器。"""
+    
+    def __init__(self, path_to_model_weights: Path) -> None:
+        """ 
+        初始化。
+        
+        Args:
+            path_to_model_weights (Path): I3D 模型权重文件的路径。
+        """
+        self.i3d = InceptionI3d(400, in_channels=3)
+        self.i3d.load_state_dict(torch.load(path_to_model_weights))
+        self.i3d.train(False)
+        
+    def compute(self, first_set_of_videos: torch.Tensor, second_set_of_videos: torch.Tensor) -> float:
+        """
+        计算两个视频集合之间的 FVD。
+        
+        Args:
+            first_set_of_videos (torch.Tensor): 第一个视频集合，形状为 (N, T, H, W, C)。
+            second_set_of_videos (torch.Tensor): 第二个视频集合，形状为 (M, T, H, W, C)。
+            
+        Returns:
+            float: 两个视频集合之间的 FVD。
+        """
+        # 获取两个视频集合的激活值
+        first_activations = get_activations(preprocess(first_set_of_videos, (224, 224)), self.i3d)
+        second_activations = get_activations(preprocess(second_set_of_videos, (224, 224)), self.i3d)
+        # 计算 FVD
+        fvd = calculate_fvd_from_activations(first_activations, second_activations)
+        return fvd
