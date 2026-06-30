@@ -1,1 +1,1 @@
-from .frechet_video_distance import frechet_video_distance
+from .frechet_video_distance import FrechetVideoDistance
