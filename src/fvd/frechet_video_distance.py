@@ -2,6 +2,7 @@ import numpy as np
 from scipy import linalg
 from tqdm import tqdm
 from pathlib import Path
+from typing import Generator
 
 import torch
 from torch.nn.functional import interpolate
@@ -9,21 +10,30 @@ from torch.nn.functional import interpolate
 from .pytorch_i3d import InceptionI3d
 
 
-def preprocess(videos, target_resolution):
+def preprocess(videos: torch.Tensor, target_resolution: tuple[int, int]) -> torch.Tensor:
     reshaped_videos = videos.permute(0, 4, 1, 2, 3)
     size = [reshaped_videos.size()[2]] + list(target_resolution)
-    resized_videos = interpolate(reshaped_videos, size=size, mode='trilinear', align_corners=False)
-    scaled_videos = 2 * resized_videos / 255. - 1
+    resized_videos: torch.Tensor = interpolate(reshaped_videos, size=size, mode='trilinear', align_corners=False)
+    scaled_videos: torch.Tensor = 2 * resized_videos / 255. - 1
     return scaled_videos
 
 
-def get_statistics(activations):
+def get_statistics(activations: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """ 
+    获取激活值的均值和协方差矩阵。
+    
+    Args:
+        activations (np.ndarray): 激活值，形状为 (N, D)。
+        
+    Returns:
+        tuple[np.ndarray, np.ndarray]: 均值和协方差矩阵。
+    """
     mean = np.mean(activations, axis=0)
     cov = np.cov(activations, rowvar=False)
     return mean, cov
 
 
-def calculate_fvd_from_activations(first_activations, second_activations, eps=1e-10):
+def calculate_fvd_from_activations(first_activations: np.ndarray, second_activations: np.ndarray, eps: float = 1e-10) -> float:
     f_mean, f_cov = get_statistics(first_activations)
     s_mean, s_cov = get_statistics(second_activations)
 
@@ -40,7 +50,7 @@ def calculate_fvd_from_activations(first_activations, second_activations, eps=1e
     return diff.dot(diff) + np.trace(f_cov + s_cov - 2 * sqrt_cov)
 
 
-def batch_generator(data, batch_size):
+def batch_generator(data: torch.Tensor, batch_size: int) -> Generator[torch.Tensor, None, None]:
     n = data.size()[0]
     indices = np.random.permutation(n)
 
@@ -49,10 +59,11 @@ def batch_generator(data, batch_size):
         yield data[batch_indices]
 
 
-def get_activations(data, model, batch_size=10):
-    activations = []
+def get_activations(data: torch.Tensor, model: InceptionI3d, batch_size: int = 10) -> np.ndarray:
+    activations: list[np.ndarray] = []
     for batch in batch_generator(data, batch_size):
-        activations.append(model(batch).squeeze().detach().numpy())
+        output: torch.Tensor = model(batch)
+        activations.append(output.squeeze().cpu().detach().numpy())
     return np.vstack(activations)
 
 
@@ -66,36 +77,3 @@ def frechet_video_distance(first_set_of_videos: torch.Tensor, second_set_of_vide
     print("Calculating activations for the second set of videos...")
     second_activations = get_activations(preprocess(second_set_of_videos, (224, 224)), i3d)
     return calculate_fvd_from_activations(first_activations, second_activations)
-
-
-class FrechetVideoDistance:
-    """ FVD 指标计算器。"""
-    
-    def __init__(self, path_to_model_weights: Path) -> None:
-        """ 
-        初始化。
-        
-        Args:
-            path_to_model_weights (Path): I3D 模型权重文件的路径。
-        """
-        self.i3d = InceptionI3d(400, in_channels=3)
-        self.i3d.load_state_dict(torch.load(path_to_model_weights))
-        self.i3d.train(False)
-        
-    def compute(self, first_set_of_videos: torch.Tensor, second_set_of_videos: torch.Tensor) -> float:
-        """
-        计算两个视频集合之间的 FVD。
-        
-        Args:
-            first_set_of_videos (torch.Tensor): 第一个视频集合，形状为 (N, T, H, W, C)。
-            second_set_of_videos (torch.Tensor): 第二个视频集合，形状为 (M, T, H, W, C)。
-            
-        Returns:
-            float: 两个视频集合之间的 FVD。
-        """
-        # 获取两个视频集合的激活值
-        first_activations = get_activations(preprocess(first_set_of_videos, (224, 224)), self.i3d)
-        second_activations = get_activations(preprocess(second_set_of_videos, (224, 224)), self.i3d)
-        # 计算 FVD
-        fvd = calculate_fvd_from_activations(first_activations, second_activations)
-        return fvd
